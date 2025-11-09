@@ -148,7 +148,7 @@ void DrawCircleInCanvas(uint8_t* data, int x, int y)
             if (intensity < 0.0f) intensity = 0.0f;
 
             int idx = cy * CELL_LEN + cx;
-            int v = data[idx] + (int)(intensity * 64);
+            int v = data[idx] + (int)(intensity * 255);
 
             if (v > 255) v = 255;
             data[idx] = (uint8_t)v;

@@ -151,8 +151,8 @@ int main()
     }
 
     // --- Training loop ---
-    const float lr = 2.5f;
-    const int epochs = 250;
+    const float lr = 3.0f;
+    const int epochs = 500;
     
     for (int e = 1; e <= epochs; e++)
         CNN_train_epoch(nn, grad_fc, &conv, train_inputs, train_labels, lr, e, epochs);
