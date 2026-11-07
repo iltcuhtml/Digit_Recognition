@@ -885,7 +885,9 @@ void CNN_apply_grads(NN nn, ConvLayer conv, NN grad_fc, Mat* kernel_grads, float
         MAT_AT(conv.biases[oc], 0, 0) -= lr * bias_grads[oc];
 }
 
-void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels, float lr, int epoch_num, int total_epochs)
+// One epoch of online SGD (batch size 1).
+// order: visiting order of the samples (NULL = 0, 1, 2, ...). Shuffle it every epoch.
+void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels, float lr, const size_t* order)
 {
     size_t samples = inputs.rows;
     size_t img_size = (size_t)sqrt((double)inputs.cols);
@@ -908,11 +910,10 @@ void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels,
 
     Mat input_image = Mat_alloc(img_size, img_size);
 
-    float epoch_cost = 0.0f;
-    size_t correct = 0;
-
-    for (size_t i = 0; i < samples; i++)
+    for (size_t n = 0; n < samples; n++)
     {
+        size_t i = order ? order[n] : n;
+
         Mat input_row = Mat_row(inputs, i);
         Mat label_row = Mat_row(labels, i);
 
@@ -920,25 +921,9 @@ void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels,
             for (size_t x = 0; x < img_size; x++)
                 MAT_AT(input_image, y, x) = MAT_AT(input_row, 0, y * img_size + x);
 
-        epoch_cost += CNN_compute_grads(nn, *conv, input_image, label_row, grad_fc, kernel_grads, bias_grads);
-
-        // accuracy (NN_OUTPUT still holds the softmax of this sample)
-        size_t max_idx = 0;
-
-        for (size_t j = 1; j < NN_OUTPUT(nn).cols; j++)
-            if (MAT_AT(NN_OUTPUT(nn), 0, j) > MAT_AT(NN_OUTPUT(nn), 0, max_idx))
-                max_idx = j;
-
-        if (MAT_AT(label_row, 0, max_idx) == 1.0f)
-            correct++;
-
+        CNN_compute_grads(nn, *conv, input_image, label_row, grad_fc, kernel_grads, bias_grads);
         CNN_apply_grads(nn, *conv, grad_fc, kernel_grads, bias_grads, lr);
     }
-
-    epoch_cost /= (float)samples;
-
-    printf("Epoch %d/%d, cost = %.4f, accuracy = %.2f\n",
-        epoch_num, total_epochs, epoch_cost, (float)correct / (float)samples);
 
     Mat_free(input_image);
 
@@ -947,6 +932,74 @@ void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels,
 
     free(kernel_grads);
     free(bias_grads);
+}
+
+// Mean cross-entropy loss and accuracy of the current model (forward pass only).
+void CNN_evaluate(NN nn, ConvLayer conv, Mat inputs, Mat labels, float* out_loss, float* out_acc)
+{
+    float loss = 0.0f;
+    size_t correct = 0;
+
+    size_t samples = inputs.rows;
+    size_t img_size = (size_t)sqrt((double)inputs.cols);
+
+    Mat* conv_out = (Mat*)malloc(sizeof(Mat) * conv.out_channels);
+    Mat* pooled = (Mat*)malloc(sizeof(Mat) * conv.out_channels);
+
+    if (!conv_out || !pooled || samples == 0)
+    {
+        free(conv_out);
+        free(pooled);
+
+        if (out_loss) *out_loss = 0.0f;
+        if (out_acc) *out_acc = 0.0f;
+
+        return;
+    }
+
+    Mat image = Mat_alloc(img_size, img_size);
+
+    for (size_t i = 0; i < samples; i++)
+    {
+        Mat input_row = Mat_row(inputs, i);
+        Mat label_row = Mat_row(labels, i);
+
+        for (size_t y = 0; y < img_size; y++)
+            for (size_t x = 0; x < img_size; x++)
+                MAT_AT(image, y, x) = MAT_AT(input_row, 0, y * img_size + x);
+
+        Mat flat;
+        CNN_forward(nn, conv, image, conv_out, pooled, &flat);
+
+        size_t max_idx = 0;
+
+        for (size_t j = 0; j < NN_OUTPUT(nn).cols; j++)
+        {
+            loss -= MAT_AT(label_row, 0, j) * logf(fmaxf(MAT_AT(NN_OUTPUT(nn), 0, j), 1e-7f));
+
+            if (MAT_AT(NN_OUTPUT(nn), 0, j) > MAT_AT(NN_OUTPUT(nn), 0, max_idx))
+                max_idx = j;
+        }
+
+        if (MAT_AT(label_row, 0, max_idx) == 1.0f)
+            correct++;
+
+        for (size_t c = 0; c < conv.out_channels; c++)
+        {
+            Mat_free(conv_out[c]);
+            Mat_free(pooled[c]);
+        }
+
+        Mat_free(flat);
+    }
+
+    Mat_free(image);
+
+    free(conv_out);
+    free(pooled);
+
+    if (out_loss) *out_loss = loss / (float)samples;
+    if (out_acc) *out_acc = (float)correct / (float)samples;
 }
 
 void CNN_save(FILE* file, ConvLayer conv, NN nn)

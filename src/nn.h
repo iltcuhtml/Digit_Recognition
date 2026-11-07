@@ -121,7 +121,8 @@ extern int NN_legacy_mode;
 float CNN_compute_grads(NN nn, ConvLayer conv, Mat input_image, Mat label, NN grad_fc, Mat* kernel_grads, float* bias_grads);
 void CNN_apply_grads(NN nn, ConvLayer conv, NN grad_fc, Mat* kernel_grads, float* bias_grads, float lr);
 
-void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels, float lr, int epoch_num, int total_epochs);
+void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels, float lr, const size_t* order);
+void CNN_evaluate(NN nn, ConvLayer conv, Mat inputs, Mat labels, float* out_loss, float* out_acc);
 
 void CNN_save(FILE* file, ConvLayer conv, NN nn);
 void CNN_load(ConvLayer* conv, NN* nn, FILE* file);
