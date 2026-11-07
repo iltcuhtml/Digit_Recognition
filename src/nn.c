@@ -20,6 +20,13 @@ int NN_legacy_mode = 0;
 // Loss = cross-entropy + (lambda / 2) * sum(w^2)   (weights only, biases are not penalized)
 float NN_l2_lambda = 0.0f;
 
+// Dropout on the hidden fully connected layers (inverted dropout).
+// NN_dropout_p = 0 -> off (baseline). NN_dropout_apply is 1 only while training.
+float NN_dropout_p = 0.0f;
+int NN_dropout_apply = 0;
+
+static uint32_t dropout_state = 2463534242u;
+
 // (lambda / 2) * sum of squares of all weights (FC weights + conv kernels)
 float NN_l2_penalty(NN nn, ConvLayer conv)
 {
@@ -469,12 +476,14 @@ NN NN_alloc(size_t* arch, size_t arch_count)
     Mat* ws = (Mat*)malloc(layer_count * sizeof(Mat));
     Mat* bs = (Mat*)malloc(layer_count * sizeof(Mat));
     Mat* as = (Mat*)malloc((layer_count + 1) * sizeof(Mat));
+    Mat* masks = (Mat*)malloc(layer_count * sizeof(Mat));
 
-    if (!ws || !bs || !as)
+    if (!ws || !bs || !as || !masks)
     {
         free(ws);
         free(bs);
         free(as);
+        free(masks);
 
         return nn;
     }
@@ -484,6 +493,7 @@ NN NN_alloc(size_t* arch, size_t arch_count)
     nn.ws = ws;
     nn.bs = bs;
     nn.as = as;
+    nn.masks = masks;
 
     nn.as[0] = Mat_alloc(1, arch[0]);
 
@@ -492,6 +502,9 @@ NN NN_alloc(size_t* arch, size_t arch_count)
         nn.ws[i] = Mat_alloc(arch[i], arch[i + 1]);
         nn.bs[i] = Mat_alloc(1, arch[i + 1]);
         nn.as[i + 1] = Mat_alloc(1, arch[i + 1]);
+
+        nn.masks[i] = Mat_alloc(1, arch[i + 1]);
+        Mat_fill(nn.masks[i], 1.0f);
     }
 
     nn.conv_count = 0;
@@ -510,6 +523,9 @@ void NN_free(NN* nn)
         Mat_free(nn->ws[i]);
         Mat_free(nn->bs[i]);
         Mat_free(nn->as[i + 1]);
+
+        if (nn->masks)
+            Mat_free(nn->masks[i]);
     }
 
     Mat_free(nn->as[0]);
@@ -517,11 +533,13 @@ void NN_free(NN* nn)
     free(nn->ws);
     free(nn->bs);
     free(nn->as);
+    free(nn->masks);
 
     if (nn->convs)
         free(nn->convs);
 
     nn->ws = nn->bs = nn->as = NULL;
+    nn->masks = NULL;
     nn->convs = NULL;
     nn->count = nn->conv_count = 0;
 }
@@ -551,6 +569,40 @@ void NN_xavier_init(NN nn)
     }
 }
 
+void NN_dropout_seed(uint32_t seed)
+{
+    dropout_state = seed ? seed : 2463534242u;
+}
+
+static float dropout_rand(void)     // [0, 1)
+{
+    uint32_t x = dropout_state;
+
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
+
+    dropout_state = x;
+
+    return (float)(x >> 8) / 16777216.0f;
+}
+
+// Mask value: 0 (unit dropped, probability p) or 1 / (1 - p) (unit kept).
+// Scaling the kept units keeps the expected activation the same, so nothing
+// has to be changed at test time (inverted dropout).
+void NN_dropout_sample(NN nn)
+{
+    if (!nn.masks)
+        return;
+
+    int active = (NN_dropout_p > 0.0f && NN_dropout_p < 1.0f);
+    float keep_scale = active ? 1.0f / (1.0f - NN_dropout_p) : 1.0f;
+
+    for (size_t i = 0; i + 1 < nn.count; i++)       // hidden layers only
+        for (size_t j = 0; j < nn.masks[i].cols; j++)
+            MAT_AT(nn.masks[i], 0, j) = (active && dropout_rand() < NN_dropout_p) ? 0.0f : keep_scale;
+}
+
 void NN_forward(NN nn)
 {
     Mat x = NN_INPUT(nn);
@@ -565,6 +617,11 @@ void NN_forward(NN nn)
         // Fixed: no ReLU on the output layer (logits go straight to softmax)
         if (i + 1 < nn.count || NN_legacy_mode)
             Mat_relu_inplace(nn.as[i + 1]);
+
+        // Dropout on hidden layers (training only)
+        if (NN_dropout_apply && nn.masks && i + 1 < nn.count)
+            for (size_t j = 0; j < nn.as[i + 1].cols; j++)
+                MAT_AT(nn.as[i + 1], 0, j) *= MAT_AT(nn.masks[i], 0, j);
 
         x = nn.as[i + 1];
     }
@@ -631,8 +688,18 @@ NN NN_load(FILE* in)
 
     nn.as[0] = Mat_alloc(1, arch[0]);
 
+    nn.masks = (Mat*)malloc(sizeof(Mat) * nn.count);
+
     for (size_t i = 0; i < nn.count; i++)
+    {
         nn.as[i + 1] = Mat_alloc(1, arch[i + 1]);
+
+        if (nn.masks)
+        {
+            nn.masks[i] = Mat_alloc(1, arch[i + 1]);
+            Mat_fill(nn.masks[i], 1.0f);
+        }
+    }
 
     if (nn.conv_count > 0)
     {
@@ -826,8 +893,16 @@ float CNN_compute_grads(NN nn, ConvLayer conv, Mat input_image, Mat label,
 
         // ReLU derivative. For l = 0 this mask also acts as the derivative of
         // the convolution's ReLU (pooled value > 0  <=>  conv output > 0).
+        // With dropout, a kept unit's gradient is scaled by the same 1 / (1 - p) as in the
+        // forward pass, and a dropped unit gets 0. as[l] is a hidden layer iff l >= 1 (mask: masks[l - 1]).
+        int use_mask = (NN_dropout_apply && nn.masks && l >= 1);
+
         for (size_t j = 0; j < A_prev.cols; j++)
-            MAT_AT(dA_prev, 0, j) *= (MAT_AT(A_prev, 0, j) > 0.0f) ? 1.0f : 0.0f;
+        {
+            float m = use_mask ? MAT_AT(nn.masks[l - 1], 0, j) : 1.0f;
+
+            MAT_AT(dA_prev, 0, j) *= (MAT_AT(A_prev, 0, j) > 0.0f) ? m : 0.0f;
+        }
 
         if (NN_legacy_mode)
         {
@@ -958,9 +1033,18 @@ void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels,
             for (size_t x = 0; x < img_size; x++)
                 MAT_AT(input_image, y, x) = MAT_AT(input_row, 0, y * img_size + x);
 
+        // new dropout mask for every sample
+        if (NN_dropout_p > 0.0f)
+        {
+            NN_dropout_sample(nn);
+            NN_dropout_apply = 1;
+        }
+
         CNN_compute_grads(nn, *conv, input_image, label_row, grad_fc, kernel_grads, bias_grads);
         CNN_apply_grads(nn, *conv, grad_fc, kernel_grads, bias_grads, lr);
     }
+
+    NN_dropout_apply = 0;
 
     Mat_free(input_image);
 
@@ -977,6 +1061,10 @@ void CNN_evaluate(NN nn, ConvLayer conv, Mat inputs, Mat labels, float* out_loss
     float loss = 0.0f;
     size_t correct = 0;
 
+    // dropout is never used for evaluation
+    int saved_dropout = NN_dropout_apply;
+    NN_dropout_apply = 0;
+
     size_t samples = inputs.rows;
     size_t img_size = (size_t)sqrt((double)inputs.cols);
 
@@ -990,6 +1078,8 @@ void CNN_evaluate(NN nn, ConvLayer conv, Mat inputs, Mat labels, float* out_loss
 
         if (out_loss) *out_loss = 0.0f;
         if (out_acc) *out_acc = 0.0f;
+
+        NN_dropout_apply = saved_dropout;
 
         return;
     }
@@ -1034,6 +1124,8 @@ void CNN_evaluate(NN nn, ConvLayer conv, Mat inputs, Mat labels, float* out_loss
 
     free(conv_out);
     free(pooled);
+
+    NN_dropout_apply = saved_dropout;
 
     if (out_loss) *out_loss = loss / (float)samples;
     if (out_acc) *out_acc = (float)correct / (float)samples;

@@ -93,6 +93,8 @@ typedef struct
 
     size_t conv_count;
     ConvLayer* convs;
+
+    Mat* masks;     // dropout masks: masks[i] belongs to as[i + 1] (hold 0 or 1 / (1 - p))
 } NN;
 
 #define NN_INPUT(nn) (nn).as[0]
@@ -118,6 +120,11 @@ void CNN_backprop(NN nn, NN grad, Mat flat, Mat label, Mat* conv_out, Mat* poole
 
 extern int NN_legacy_mode;
 extern float NN_l2_lambda;
+
+extern float NN_dropout_p;          // dropout probability of the hidden layers, 0 = off
+extern int NN_dropout_apply;        // 1: NN_forward applies the masks (training only)
+void NN_dropout_seed(uint32_t seed);
+void NN_dropout_sample(NN nn);      // draws a new mask for every hidden layer
 float NN_l2_penalty(NN nn, ConvLayer conv);
 
 float CNN_compute_grads(NN nn, ConvLayer conv, Mat input_image, Mat label, NN grad_fc, Mat* kernel_grads, float* bias_grads);

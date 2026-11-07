@@ -18,6 +18,7 @@
 
 #define CHECK_LEGACY        0           // 1: also run the original (buggy) backprop
 #define L2_CHECK_LAMBDA     1.0f        // lambda used for the L2 check
+#define DROPOUT_CHECK_P     0.5f        // dropout probability used for the dropout check
 
 typedef struct
 {
@@ -138,6 +139,7 @@ static void run_check(
     size_t kernel_elems = conv.kernel_size * conv.kernel_size;
 
     srand(2024);
+    NN_dropout_seed(2024u);
 
     Mat image = Mat_alloc(DS_IMG_LEN, DS_IMG_LEN);
 
@@ -153,6 +155,13 @@ static void run_check(
                 MAT_AT(image, y, x) = MAT_AT(all.inputs, sample, y * DS_IMG_LEN + x);
 
         Mat label = Mat_row(all.labels, sample);
+
+        // dropout: ONE fixed mask per image, used for the analytic AND the numeric gradient
+        if (NN_dropout_p > 0.0f)
+        {
+            NN_dropout_sample(nn);
+            NN_dropout_apply = 1;
+        }
 
         // analytic gradients
         CNN_compute_grads(nn, conv, image, label, grad_fc, kernel_grads, bias_grads);
@@ -213,11 +222,13 @@ static void run_check(
                 record(&stats[g], analytic, (float)numeric);
             }
         }
+
+        NN_dropout_apply = 0;
     }
 
     Mat_free(image);
 
-    printf("\n=== %s | L2 lambda = %g ===\n", legacy ? "ORIGINAL code (legacy)" : "FIXED code", (double)NN_l2_lambda);
+    printf("\n=== %s | L2 lambda = %g | dropout p = %g ===\n", legacy ? "ORIGINAL code (legacy)" : "FIXED code", (double)NN_l2_lambda, (double)NN_dropout_p);
     printf("%-13s %12s %12s %11s  %s\n", "group", "|analytic|", "|numeric|", "rel. error", "result");
 
     for (size_t g = 0; g < group_count; g++)
@@ -309,6 +320,14 @@ int main()
     run_check(0, all, nn, conv, grad_fc, kernel_grads, bias_grads);   // fixed code + L2
 
     NN_l2_lambda = 0.0f;
+    NN_dropout_p = DROPOUT_CHECK_P;
+    run_check(0, all, nn, conv, grad_fc, kernel_grads, bias_grads);   // fixed code + dropout
+
+    NN_l2_lambda = L2_CHECK_LAMBDA;
+    run_check(0, all, nn, conv, grad_fc, kernel_grads, bias_grads);   // fixed code + L2 + dropout
+
+    NN_l2_lambda = 0.0f;
+    NN_dropout_p = 0.0f;
 
     for (size_t k = 0; k < kernel_count; k++)
         Mat_free(kernel_grads[k]);
