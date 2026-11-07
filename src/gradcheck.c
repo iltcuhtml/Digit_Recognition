@@ -17,7 +17,7 @@
 #define MAX_GROUPS          16
 
 #define CHECK_LEGACY        0           // 1: also run the original (buggy) backprop
-#define L2_CHECK_LAMBDA     0.01f       // lambda used for the L2 check
+#define L2_CHECK_LAMBDA     1.0f        // lambda used for the L2 check
 
 typedef struct
 {
@@ -39,8 +39,29 @@ static size_t rand_below(size_t n)
     return r % n;
 }
 
-// forward pass + cross-entropy loss only (no gradients)
-static float eval_loss(NN nn, ConvLayer conv, Mat image, Mat label)
+// (lambda / 2) * sum of squares of all weights, summed in double.
+// With a large lambda this penalty is ~100; stored in a float loss its rounding error
+// (~1e-5) would swamp the small loss differences the central difference needs.
+static double l2_penalty_double(NN nn, ConvLayer conv)
+{
+    if (NN_l2_lambda == 0.0f)
+        return 0.0;
+
+    double sum = 0.0;
+
+    for (size_t l = 0; l < nn.count; l++)
+        for (size_t j = 0; j < nn.ws[l].rows * nn.ws[l].cols; j++)
+            sum += (double)nn.ws[l].es[j] * (double)nn.ws[l].es[j];
+
+    for (size_t k = 0; k < conv.out_channels * conv.in_channels; k++)
+        for (size_t j = 0; j < conv.kernels[k].rows * conv.kernels[k].cols; j++)
+            sum += (double)conv.kernels[k].es[j] * (double)conv.kernels[k].es[j];
+
+    return 0.5 * (double)NN_l2_lambda * sum;
+}
+
+// forward pass + total loss (cross-entropy + L2 penalty), returned in double
+static double eval_loss(NN nn, ConvLayer conv, Mat image, Mat label)
 {
     Mat* conv_out = (Mat*)malloc(sizeof(Mat) * conv.out_channels);
     Mat* pooled = (Mat*)malloc(sizeof(Mat) * conv.out_channels);
@@ -50,7 +71,7 @@ static float eval_loss(NN nn, ConvLayer conv, Mat image, Mat label)
         free(conv_out);
         free(pooled);
 
-        return -1.0f;
+        return -1.0;
     }
 
     Mat flat;
@@ -72,7 +93,7 @@ static float eval_loss(NN nn, ConvLayer conv, Mat image, Mat label)
     free(conv_out);
     free(pooled);
 
-    return loss + NN_l2_penalty(nn, conv);   // total loss = cross-entropy + L2 penalty
+    return (double)loss + l2_penalty_double(nn, conv);   // total loss = cross-entropy + L2 penalty
 }
 
 static void record(GroupStat* s, float analytic, float numeric)
@@ -172,18 +193,24 @@ static void run_check(
                     analytic = G->es[e];
                 }
 
-                // numerical gradient (central difference)
+                // numerical gradient (central difference, evaluated in double)
                 float original = *p;
 
-                *p = original + STEP;
-                float loss_plus = eval_loss(nn, conv, image, label);
+                float plus = original + STEP;
+                float minus = original - STEP;
 
-                *p = original - STEP;
-                float loss_minus = eval_loss(nn, conv, image, label);
+                *p = plus;
+                double loss_plus = eval_loss(nn, conv, image, label);
+
+                *p = minus;
+                double loss_minus = eval_loss(nn, conv, image, label);
 
                 *p = original;
 
-                record(&stats[g], analytic, (loss_plus - loss_minus) / (2.0f * STEP));
+                // divide by the step that was actually applied (float rounding of original +- STEP)
+                double numeric = (loss_plus - loss_minus) / ((double)plus - (double)minus);
+
+                record(&stats[g], analytic, (float)numeric);
             }
         }
     }
