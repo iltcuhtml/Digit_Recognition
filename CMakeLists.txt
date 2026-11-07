@@ -30,3 +30,10 @@ add_executable(
     "src/draw.h" "src/draw.c"
     "src/nn.h" "src/nn.c"
 )
+
+add_executable(
+    gradcheck
+    "src/gradcheck.c"
+    "src/dataset.h" "src/dataset.c"
+    "src/nn.h" "src/nn.c"
+)

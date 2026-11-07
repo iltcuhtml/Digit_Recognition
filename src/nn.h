@@ -116,6 +116,11 @@ NN NN_load(FILE* in);
 void CNN_forward(NN nn, ConvLayer conv, Mat input_image, Mat* conv_out, Mat* pooled, Mat* flat);
 void CNN_backprop(NN nn, NN grad, Mat flat, Mat label, Mat* conv_out, Mat* pooled, ConvLayer* conv);
 
+extern int NN_legacy_mode;
+
+float CNN_compute_grads(NN nn, ConvLayer conv, Mat input_image, Mat label, NN grad_fc, Mat* kernel_grads, float* bias_grads);
+void CNN_apply_grads(NN nn, ConvLayer conv, NN grad_fc, Mat* kernel_grads, float* bias_grads, float lr);
+
 void CNN_train_epoch(NN nn, NN grad_fc, ConvLayer* conv, Mat inputs, Mat labels, float lr, int epoch_num, int total_epochs);
 
 void CNN_save(FILE* file, ConvLayer conv, NN nn);
