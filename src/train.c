@@ -21,8 +21,8 @@
 //  Part 3: RUN_LR_SEARCH 0, FIXED_LR <chosen>, SPLIT_REPEATS 5  -> repeated splits
 #define RUN_LR_SEARCH    0
 #define LR_SEARCH_ONLY   0
-#define FIXED_LR         0.003f              // used when RUN_LR_SEARCH is 0
-#define SPLIT_REPEATS    1                  // number of different splits (seeds)
+#define FIXED_LR         0.003f             // used when RUN_LR_SEARCH is 0
+#define SPLIT_REPEATS    5                  // number of different splits (seeds)
 #define BASE_SPLIT_SEED  20424u             // seeds: BASE + 0, 1, 2, ...
 
 #define EPOCHS           30                 // epochs of the final baseline runs
