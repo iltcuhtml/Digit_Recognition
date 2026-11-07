@@ -16,6 +16,29 @@ float drelu(float x)
 // 1: reproduce the original (buggy) behaviour, 0: fixed code (default)
 int NN_legacy_mode = 0;
 
+// L2 regularization strength (lambda). 0 = no regularization (baseline).
+// Loss = cross-entropy + (lambda / 2) * sum(w^2)   (weights only, biases are not penalized)
+float NN_l2_lambda = 0.0f;
+
+// (lambda / 2) * sum of squares of all weights (FC weights + conv kernels)
+float NN_l2_penalty(NN nn, ConvLayer conv)
+{
+    if (NN_l2_lambda == 0.0f)
+        return 0.0f;
+
+    double sum = 0.0;
+
+    for (size_t l = 0; l < nn.count; l++)
+        for (size_t j = 0; j < nn.ws[l].rows * nn.ws[l].cols; j++)
+            sum += (double)nn.ws[l].es[j] * (double)nn.ws[l].es[j];
+
+    for (size_t k = 0; k < conv.out_channels * conv.in_channels; k++)
+        for (size_t j = 0; j < conv.kernels[k].rows * conv.kernels[k].cols; j++)
+            sum += (double)conv.kernels[k].es[j] * (double)conv.kernels[k].es[j];
+
+    return (float)(0.5 * (double)NN_l2_lambda * sum);
+}
+
 // -------------------------
 // Matrix
 // -------------------------
@@ -854,6 +877,20 @@ float CNN_compute_grads(NN nn, ConvLayer conv, Mat input_image, Mat label,
                 bg += MAT_AT(d_conv_out[oc], y, x);
 
         bias_grads[oc] = bg;
+    }
+
+    // L2 regularization: d/dw [ (lambda / 2) * w^2 ] = lambda * w  (weights only)
+    if (NN_l2_lambda != 0.0f)
+    {
+        for (size_t l = 0; l < nn.count; l++)
+            for (size_t j = 0; j < nn.ws[l].rows * nn.ws[l].cols; j++)
+                grad_fc.ws[l].es[j] += NN_l2_lambda * nn.ws[l].es[j];
+
+        for (size_t k = 0; k < conv.out_channels * conv.in_channels; k++)
+            for (size_t j = 0; j < conv.kernels[k].rows * conv.kernels[k].cols; j++)
+                kernel_grads[k].es[j] += NN_l2_lambda * conv.kernels[k].es[j];
+
+        loss += NN_l2_penalty(nn, conv);
     }
 
     // free everything allocated in this call (the original code leaked conv_out/pooled)

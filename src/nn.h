@@ -117,6 +117,8 @@ void CNN_forward(NN nn, ConvLayer conv, Mat input_image, Mat* conv_out, Mat* poo
 void CNN_backprop(NN nn, NN grad, Mat flat, Mat label, Mat* conv_out, Mat* pooled, ConvLayer* conv);
 
 extern int NN_legacy_mode;
+extern float NN_l2_lambda;
+float NN_l2_penalty(NN nn, ConvLayer conv);
 
 float CNN_compute_grads(NN nn, ConvLayer conv, Mat input_image, Mat label, NN grad_fc, Mat* kernel_grads, float* bias_grads);
 void CNN_apply_grads(NN nn, ConvLayer conv, NN grad_fc, Mat* kernel_grads, float* bias_grads, float lr);

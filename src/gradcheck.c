@@ -16,6 +16,9 @@
 
 #define MAX_GROUPS          16
 
+#define CHECK_LEGACY        0           // 1: also run the original (buggy) backprop
+#define L2_CHECK_LAMBDA     0.01f       // lambda used for the L2 check
+
 typedef struct
 {
     char name[24];
@@ -69,7 +72,7 @@ static float eval_loss(NN nn, ConvLayer conv, Mat image, Mat label)
     free(conv_out);
     free(pooled);
 
-    return loss;
+    return loss + NN_l2_penalty(nn, conv);   // total loss = cross-entropy + L2 penalty
 }
 
 static void record(GroupStat* s, float analytic, float numeric)
@@ -187,7 +190,7 @@ static void run_check(
 
     Mat_free(image);
 
-    printf("\n=== %s ===\n", legacy ? "ORIGINAL code (legacy)" : "FIXED code");
+    printf("\n=== %s | L2 lambda = %g ===\n", legacy ? "ORIGINAL code (legacy)" : "FIXED code", (double)NN_l2_lambda);
     printf("%-13s %12s %12s %11s  %s\n", "group", "|analytic|", "|numeric|", "rel. error", "result");
 
     for (size_t g = 0; g < group_count; g++)
@@ -265,10 +268,20 @@ int main()
         kernel_grads[k] = Mat_alloc(conv.kernel_size, conv.kernel_size);
 
     printf("Gradient check: %d images, %d random parameters per group and image, h = %g\n",
-           CHECK_SAMPLES, PARAMS_PER_GROUP, (double)STEP);
+        CHECK_SAMPLES, PARAMS_PER_GROUP, (double)STEP);
 
+#if CHECK_LEGACY
+    NN_l2_lambda = 0.0f;
     run_check(1, all, nn, conv, grad_fc, kernel_grads, bias_grads);   // original code
-    run_check(0, all, nn, conv, grad_fc, kernel_grads, bias_grads);   // fixed code
+#endif
+
+    NN_l2_lambda = 0.0f;
+    run_check(0, all, nn, conv, grad_fc, kernel_grads, bias_grads);   // fixed code, no L2
+
+    NN_l2_lambda = L2_CHECK_LAMBDA;
+    run_check(0, all, nn, conv, grad_fc, kernel_grads, bias_grads);   // fixed code + L2
+
+    NN_l2_lambda = 0.0f;
 
     for (size_t k = 0; k < kernel_count; k++)
         Mat_free(kernel_grads[k]);
