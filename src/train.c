@@ -4,92 +4,61 @@
 #include <string.h>
 
 #include "nn.h"
+#include "dataset.h"
 
 #define CELL_LEN 28
 
+// ---------- Experiment settings ----------
+#define TRAIN_RATIO      0.70f      // train 70% / val 15% / test 15%
+#define VAL_RATIO        0.15f
+#define SPLIT_SEED       20424u     // fixed seed -> the same split every run
+#define AUGMENT_COPIES   9          // each training image + 9 rotated/shifted copies
+#define AUGMENT_SEED     7u
+
+#define RESUME_TRAINING  0          // 0: always start from a new model (no leakage from old training)
+#define DATA_CHECK_ONLY  1          // 1: only print split/augmentation result and exit
+
 int main()
 {
-    FILE* file = NULL;
     FILE* model_file = NULL;
     FILE* out_file = NULL;
 
-    Mat train_inputs = { 0 }, train_labels = { 0 };
+    Dataset all = { 0 }, train_raw = { 0 }, val = { 0 }, test = { 0 }, train = { 0 };
     NN nn = { 0 }, grad_fc = { 0 };
     ConvLayer conv = { 0 };
-    uint8_t* raw_images = NULL;
 
     // --- Load dataset ---
-    if (fopen_s(&file, "data/number.dat", "rb") != 0 || !file)
-    {
-        printf("Failed to open 'data/number.dat'\n");
+    all = Dataset_load("data/number.dat");
 
+    if (all.count == 0)
         goto cleanup;
-    }
 
-    char header[7];
+    // --- Split (train / val / test) -> augment ONLY the training set ---
+    Dataset_split(all, TRAIN_RATIO, VAL_RATIO, SPLIT_SEED, &train_raw, &val, &test);
+    Dataset_free(&all);
 
-    if (fread(header, sizeof(char), 7, file) != 7 || memcmp(header, "NUMDATA", 7) != 0)
-    {
-        printf("File header mismatch\n");
+    train = Dataset_augment(train_raw, AUGMENT_COPIES, AUGMENT_SEED);
 
-        goto cleanup;
-    }
+    Dataset_print_summary("TRAIN (original) ", train_raw);
+    Dataset_print_summary("TRAIN (augmented)", train);
+    Dataset_print_summary("VAL              ", val);
+    Dataset_print_summary("TEST             ", test);
 
-    size_t sample_count = 0;
+#if DATA_CHECK_ONLY
+    printf("\n[original image]\n");
+    Dataset_print_ascii(train, 0);
 
-    if (fread(&sample_count, sizeof(size_t), 1, file) != 1 || sample_count == 0)
-    {
-        printf("No data in 'data/number.dat'\n");
+    printf("\n[augmented image (rotated/shifted copy of the same sample)]\n");
+    Dataset_print_ascii(train, 1);
 
-        goto cleanup;
-    }
+    goto cleanup;
+#endif
 
-    printf("Dataset loaded, %zu samples\n", sample_count);
-
-    const int input_size = CELL_LEN * CELL_LEN;
-    const int num_classes = 10;
-
-    raw_images = (uint8_t*)malloc(sizeof(uint8_t) * sample_count * input_size);
-    
-    if (!raw_images)
-    {
-        printf("Memory allocation failed\n");
-        
-        goto cleanup;
-    }
-
-    if (fread(raw_images, sizeof(uint8_t), sample_count * input_size, file) != sample_count * input_size)
-    {
-        printf("Failed to read image data\n");
-        
-        goto cleanup;
-    }
-
-    fclose(file);
-    file = NULL;
-
-    train_inputs = Mat_alloc(sample_count, input_size);
-
-    for (size_t i = 0; i < sample_count; i++)
-        for (size_t j = 0; j < input_size; j++)
-            MAT_AT(train_inputs, i, j) = raw_images[i * input_size + j] / 255.0f;
-
-    free(raw_images);
-    raw_images = NULL;
-
-    train_labels = Mat_alloc(sample_count, num_classes);
-
-    for (size_t i = 0; i < sample_count; i++)
-    {
-        Mat row = Mat_row(train_labels, i);
-
-        for (int j = 0; j < num_classes; j++)
-            MAT_AT(row, 0, j) = 0.0f;
-
-        MAT_AT(row, 0, i % num_classes) = 1.0f;
-    }
+    const int num_classes = DS_CLASSES;
+    (void)num_classes;
 
     // --- Load or initialize model ---
+#if RESUME_TRAINING
     if (fopen_s(&model_file, "data/model.cnn", "rb") == 0 && model_file)
     {
         CNN_load(&conv, &nn, model_file);
@@ -100,6 +69,7 @@ int main()
         printf("Existing model loaded, continuing training\n");
     }
     else
+#endif
     {
         size_t conv_out_rows = CELL_LEN - 3 + 1;
         size_t pool_rows = conv_out_rows / 2;
@@ -108,15 +78,15 @@ int main()
 
         conv = Conv_alloc(1, 16, 3);
         nn = NN_alloc(fc_arch, sizeof(fc_arch) / sizeof(*fc_arch));
-        
+
         NN_xavier_init(nn);
-        
+
         for (size_t i = 0; i < nn.count; i++)
             Mat_fill(nn.bs[i], 0.01f);
-        
+
         for (size_t i = 0; i < conv.out_channels * conv.in_channels; i++)
             Mat_rand(conv.kernels[i], -0.1f, 0.1f);
-        
+
         for (size_t i = 0; i < conv.out_channels; i++)
             MAT_AT(conv.biases[i], 0, 0) = 0.0f;
     }
@@ -125,62 +95,63 @@ int main()
     if (nn.count > 0 && nn.as != NULL)
     {
         size_t* arch = malloc(sizeof(size_t) * (nn.count + 1));
-        
+
         if (!arch)
         {
             fprintf(stderr, "Memory allocation failed for arch\n");
-            
+
             goto cleanup;
         }
 
         arch[0] = nn.as[0].cols;
-        
+
         for (size_t i = 0; i < nn.count; i++)
             arch[i + 1] = nn.ws[i].cols;
 
         grad_fc = NN_alloc(arch, nn.count + 1);
-        
+
         NN_zero_grad(grad_fc);
         free(arch);
     }
     else
     {
         fprintf(stderr, "Error: NN not initialized!\n");
-        
+
         goto cleanup;
     }
 
-    // --- Training loop ---
+    // --- Training loop (trains on the augmented TRAIN set only) ---
     const float lr = 3.0f;
     const int epochs = 500;
-    
+
     for (int e = 1; e <= epochs; e++)
-        CNN_train_epoch(nn, grad_fc, &conv, train_inputs, train_labels, lr, e, epochs);
+        CNN_train_epoch(nn, grad_fc, &conv, train.inputs, train.labels, lr, e, epochs);
 
     // --- Save model ---
     if (fopen_s(&out_file, "data/model.cnn", "wb") == 0 && out_file)
     {
         CNN_save(out_file, conv, nn);
-        
+
         fclose(out_file);
         out_file = NULL;
-        
+
         printf("Model saved to 'data/model.cnn'\n");
     }
 
 cleanup:
-    if (file) fclose(file);
     if (model_file) fclose(model_file);
     if (out_file) fclose(out_file);
-    if (raw_images) free(raw_images);
 
-    NN_free(&nn);
-    NN_free(&grad_fc);
-
-    Mat_free(train_inputs);
-    Mat_free(train_labels);
+    if (nn.as) NN_free(&nn);
+    if (grad_fc.as) NN_free(&grad_fc);
 
     Conv_free(&conv);
+
+    Dataset_free(&all);
+    Dataset_free(&train_raw);
+    Dataset_free(&train);
+    Dataset_free(&val);
+    Dataset_free(&test);
 
     return EXIT_SUCCESS;
 }

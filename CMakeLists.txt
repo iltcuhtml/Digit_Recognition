@@ -20,6 +20,7 @@ endif()
 add_executable(
     train
     src/train.c
+    "src/dataset.h" "src/dataset.c"
     "src/nn.h" "src/nn.c"
 )
 
