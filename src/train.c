@@ -19,8 +19,8 @@
 //  Part 1: RUN_LR_SEARCH 1, LR_SEARCH_ONLY 1            -> choose the learning rate
 //  Part 2: RUN_LR_SEARCH 0, FIXED_LR <chosen>, SPLIT_REPEATS 1  -> one baseline run
 //  Part 3: RUN_LR_SEARCH 0, FIXED_LR <chosen>, SPLIT_REPEATS 5  -> repeated splits
-#define RUN_LR_SEARCH    1
-#define LR_SEARCH_ONLY   1
+#define RUN_LR_SEARCH    0
+#define LR_SEARCH_ONLY   0
 #define FIXED_LR         0.03f              // used when RUN_LR_SEARCH is 0
 #define SPLIT_REPEATS    1                  // number of different splits (seeds)
 #define BASE_SPLIT_SEED  20424u             // seeds: BASE + 0, 1, 2, ...
