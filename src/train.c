@@ -33,8 +33,8 @@
 #define CHOSEN_LAMBDA    0.0f               // fill in after Part 1
 #define CHOSEN_P         0.0f               // fill in after Part 1
 
-static const float L2_CANDIDATES[] = { 0.001f, 0.01f, 0.1f };
-static const float DROPOUT_CANDIDATES[] = { 0.2f, 0.3f, 0.5f };
+static const float L2_CANDIDATES[] = { 0.03f, 0.3f };
+static const float DROPOUT_CANDIDATES[] = { 0.6f, 0.7f };
 
 #define L2_COUNT        ((int)(sizeof(L2_CANDIDATES) / sizeof(L2_CANDIDATES[0])))
 #define DROPOUT_COUNT   ((int)(sizeof(DROPOUT_CANDIDATES) / sizeof(DROPOUT_CANDIDATES[0])))
@@ -570,30 +570,38 @@ static int run_compare(Dataset all)
 
     // ---- table 3: paired difference to the baseline (same split, same init) ----
     printf("\n=========== Table 3: difference to baseline on the SAME split (model - baseline) ===========\n");
-    printf("%-9s %-18s %-18s %s\n", "model", "d test (%p)", "d gap (%p)", "test better/same/worse");
+    printf("%-9s %-17s %-17s %-11s %-19s %s\n",
+        "model", "d test acc (%p)", "d gap (%p)", "acc b/s/w", "d test loss", "loss lower");
 
     for (int c = 1; c < MODEL_COUNT; c++)
     {
-        float dt[SPLIT_REPEATS], dg[SPLIT_REPEATS];
-        int better = 0, same = 0, worse = 0;
+        float dt[SPLIT_REPEATS] = { 0.0f };
+        float dg[SPLIT_REPEATS] = { 0.0f };
+        float dl[SPLIT_REPEATS] = { 0.0f };
+        int better = 0, same = 0, worse = 0, lower = 0;
 
         for (int s = 0; s < SPLIT_REPEATS; s++)
         {
             dt[s] = te[c][s] - te[0][s];
             dg[s] = gap[c][s] - gap[0][s];
+            dl[s] = tl[c][s] - tl[0][s];
 
             if (dt[s] > 0.0f) better++;
             else if (dt[s] < 0.0f) worse++;
             else same++;
+
+            if (dl[s] < 0.0f) lower++;
         }
 
-        float mt, st, mg, sg;
+        float mt, st, mg, sg, ml, sl;
 
         mean_std(dt, SPLIT_REPEATS, &mt, &st);
         mean_std(dg, SPLIT_REPEATS, &mg, &sg);
+        mean_std(dl, SPLIT_REPEATS, &ml, &sl);
 
-        printf("%-9s %+6.1f +- %-6.1f   %+6.1f +- %-6.1f   %d / %d / %d\n",
-            cfgs[c].name, (double)mt, (double)st, (double)mg, (double)sg, better, same, worse);
+        printf("%-9s %+6.1f +- %-6.1f  %+6.1f +- %-6.1f  %d / %d / %d   %+7.4f +- %-7.4f  %d / %d\n",
+            cfgs[c].name, (double)mt, (double)st, (double)mg, (double)sg, better, same, worse,
+            (double)ml, (double)sl, lower, SPLIT_REPEATS);
     }
 
     return 1;
