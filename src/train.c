@@ -28,10 +28,10 @@
 //                                    compare baseline / L2 / dropout / both on the same splits
 #define MODE_SEARCH      0
 #define MODE_COMPARE     1
-#define RUN_MODE         MODE_SEARCH
+#define RUN_MODE         MODE_COMPARE
 
-#define CHOSEN_LAMBDA    0.0f               // fill in after Part 1
-#define CHOSEN_P         0.0f               // fill in after Part 1
+#define CHOSEN_LAMBDA    0.03f
+#define CHOSEN_P         0.6f
 
 static const float L2_CANDIDATES[] = { 0.03f, 0.3f };
 static const float DROPOUT_CANDIDATES[] = { 0.6f, 0.7f };
