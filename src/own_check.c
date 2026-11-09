@@ -213,7 +213,7 @@ static void report(const char* name, NN nn, ConvLayer conv, Dataset d, int evalu
 
 int main(int argc, char** argv)
 {
-    FILE* f = fopen(argc > 1 ? argv[1] : "data/model_mnist_aug.cnn", "rb");
+    FILE* f = fopen(argc > 1 ? argv[1] : "data/model_mnist.cnn", "rb");
 
     if (!f)
     {
