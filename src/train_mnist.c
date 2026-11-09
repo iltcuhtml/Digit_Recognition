@@ -8,6 +8,8 @@
 #include "nn.h"
 #include "dataset.h"
 
+#define AUG_DEG         10.0f       // 0 and 0 = augmentation off
+#define AUG_SHIFT       3.0f
 #define LOAD_LIMIT      0           // 0 = all 60000. Use 6000 for a quick timing run
 #define EPOCHS          10
 #define LR              0.003f
@@ -175,6 +177,10 @@ int main(void)
 
     Dataset train = Dataset_subset(all, 0, all.count - n_val);
     Dataset val = Dataset_subset(all, all.count - n_val, n_val);
+    Dataset train_aug = Dataset_subset(train, 0, train.count);
+
+    if (train_aug.count == 0)
+        return EXIT_FAILURE;
 
     Model m;
 
@@ -191,8 +197,8 @@ int main(void)
     Mat tr_in, tr_lb;
     view_first(train, eval_n, &tr_in, &tr_lb);
 
-    printf("[MNIST | train %zu | val %zu | lr %g | %d epochs | L2 %g | dropout %g]\n",
-        train.count, val.count, (double)LR, EPOCHS, (double)L2_LAMBDA, (double)DROPOUT_P);
+    printf("[MNIST | train %zu | val %zu | lr %g | %d epochs | L2 %g | dropout %g | aug %g deg %g px]\n",
+        train.count, val.count, (double)LR, EPOCHS, (double)L2_LAMBDA, (double)DROPOUT_P, (double)AUG_DEG, (double)AUG_SHIFT);
 
     NN_l2_lambda = L2_LAMBDA;
     NN_dropout_p = DROPOUT_P;
@@ -200,10 +206,10 @@ int main(void)
 
     FILE* csv = NULL;
 #ifdef _MSC_VER
-    if (fopen_s(&csv, "data/curve_mnist.csv", "w") != 0)
+    if (fopen_s(&csv, "data/curve_mnist_aug.csv", "w") != 0)
         csv = NULL;
 #else
-    csv = fopen("data/curve_mnist.csv", "w");
+    csv = fopen("data/curve_mnist_aug.csv", "w");
 #endif
 
     if (csv)
@@ -215,7 +221,9 @@ int main(void)
     {
         shuffle_order(order, train.count);
 
-        CNN_train_epoch(m.nn, m.grad, &m.conv, train.inputs, train.labels, LR, order);
+        Dataset_random_transform(train, train_aug, AUG_DEG, AUG_SHIFT, 1000u + (uint32_t)e);
+
+        CNN_train_epoch(m.nn, m.grad, &m.conv, train_aug.inputs, train_aug.labels, LR, order);
 
         float tl, ta, vl, va, ol, oa;
 
@@ -246,10 +254,10 @@ int main(void)
 
     FILE* out = NULL;
 #ifdef _MSC_VER
-    if (fopen_s(&out, "data/model_mnist.cnn", "wb") != 0)
+    if (fopen_s(&out, "data/model_mnist_aug.cnn", "wb") != 0)
         out = NULL;
 #else
-    out = fopen("data/model_mnist.cnn", "wb");
+    out = fopen("data/model_mnist_aug.cnn", "wb");
 #endif
     if (out)
     {
@@ -264,6 +272,7 @@ int main(void)
     Model_free(&m);
 
     Dataset_free(&train);
+	Dataset_free(&train_aug);
     Dataset_free(&val);
     Dataset_free(&all);
     Dataset_free(&test);

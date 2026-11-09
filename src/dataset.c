@@ -425,6 +425,20 @@ static void transform_image(const float* src, float* dst, float angle, float dx,
         }
 }
 
+void Dataset_random_transform(Dataset src, Dataset dst, float max_deg, float max_shift, uint32_t seed)
+{
+    Rng rng = Rng_make(seed);
+
+    for (size_t i = 0; i < src.count && i < dst.count; i++)
+    {
+        float angle = Rng_range(&rng, -max_deg, max_deg) * PI_F / 180.0f;
+        float dx = Rng_range(&rng, -max_shift, max_shift);
+        float dy = Rng_range(&rng, -max_shift, max_shift);
+
+        transform_image(&MAT_AT(src.inputs, i, 0), &MAT_AT(dst.inputs, i, 0), angle, dx, dy);
+    }
+}
+
 Dataset Dataset_augment(Dataset src, int copies, uint32_t seed)
 {
     Rng rng = Rng_make(seed);

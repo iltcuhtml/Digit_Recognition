@@ -40,6 +40,10 @@ void Dataset_split(
     Dataset* train, Dataset* val, Dataset* test
 );
 
+// Overwrites dst with randomly rotated/shifted versions of src (dst must be a copy of src, e.g. made by Dataset_subset).
+// Call it every epoch with a new seed.
+void Dataset_random_transform(Dataset src, Dataset dst, float max_deg, float max_shift, uint32_t seed);
+
 // Returns a new dataset: each original sample + 'copies' rotated/shifted versions.
 // Apply this ONLY to the training set (after the split).
 Dataset Dataset_augment(Dataset src, int copies, uint32_t seed);

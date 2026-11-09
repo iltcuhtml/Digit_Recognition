@@ -1,0 +1,95 @@
+train_mnist.c
+
+[MNIST | train 55000 | val 5000 | lr 0.003 | 10 epochs | L2 0 | dropout 0 | aug 10 deg 3 px]
+epoch  1 | train  96.6% (loss 0.1125) | val  96.5% (loss 0.1148) | own  78.2% (loss 0.7998) | 78s
+epoch  2 | train  97.5% (loss 0.0795) | val  97.7% (loss 0.0805) | own  90.9% (loss 0.3808) | 156s
+epoch  3 | train  97.9% (loss 0.0679) | val  97.8% (loss 0.0712) | own  91.8% (loss 0.5225) | 232s
+epoch  4 | train  98.3% (loss 0.0524) | val  98.4% (loss 0.0590) | own  88.2% (loss 0.4017) | 310s
+epoch  5 | train  98.4% (loss 0.0517) | val  98.4% (loss 0.0575) | own  92.7% (loss 0.3946) | 388s
+epoch  6 | train  98.6% (loss 0.0445) | val  98.8% (loss 0.0453) | own  92.7% (loss 0.3248) | 466s
+epoch  7 | train  98.7% (loss 0.0379) | val  98.5% (loss 0.0534) | own  94.5% (loss 0.2722) | 543s
+epoch  8 | train  98.8% (loss 0.0406) | val  98.5% (loss 0.0473) | own  95.5% (loss 0.1869) | 620s
+epoch  9 | train  98.8% (loss 0.0373) | val  98.7% (loss 0.0458) | own  93.6% (loss 0.2341) | 696s
+epoch 10 | train  98.8% (loss 0.0345) | val  98.9% (loss 0.0406) | own  96.4% (loss 0.1500) | 773s
+
+FINAL | MNIST test 98.73% (loss 0.0419) | own handwriting 96.36% (loss 0.1500)
+
+Confusion matrix on own handwriting (row = true, col = predicted)
+       0  1  2  3  4  5  6  7  8  9
+  0:  10  0  0  0  0  0  1  0  0  0
+  1:   0  9  0  0  0  0  0  1  0  1
+  2:   0  0 11  0  0  0  0  0  0  0
+  3:   0  0  0 11  0  0  0  0  0  0
+  4:   0  0  0  0 11  0  0  0  0  0
+  5:   0  0  0  0  0 11  0  0  0  0
+  6:   0  0  0  0  0  0 11  0  0  0
+  7:   0  0  0  0  0  0  0 10  1  0
+  8:   0  0  0  0  0  0  0  0 11  0
+  9:   0  0  0  0  0  0  0  0  0 11
+
+own_check.c
+
+MNIST      | ink   94.8 | box 14.4 x 19.8 | stroke run 3.72 | (reference)
+own raw    | ink  139.6 | box 14.8 x 20.7 | stroke run 5.49 | acc  96.4% | loss 0.150
+shift      | ink  139.6 | box 15.4 x 21.3 | stroke run 5.44 | acc  96.4% | loss 0.197
+box        | ink  131.3 | box 15.1 x 20.5 | stroke run 5.38 | acc  97.3% | loss 0.086
+thin       | ink   38.0 | box 12.8 x 18.7 | stroke run 1.82 | acc  86.4% | loss 0.402
+box+thin   | ink   41.0 | box 12.9 x 18.3 | stroke run 1.93 | acc  91.8% | loss 0.232
+
+--- own[1] raw ---
+label = 1
+
+
+
+
+
+
+                      %%@@%%
+                      @@@@@@--
+                      %%@@@@@@
+                        @@@@@@
+                        @@@@@@
+                        @@@@@@
+                        @@@@@@
+                        @@@@@@
+                        @@@@@@
+                        @@@@@@
+                        @@@@@@
+                        @@@@@@
+                      @@@@@@@@
+                      @@@@@@@@
+                      @@@@@@--
+                      @@@@@@
+
+
+
+
+
+
+
+--- own[1] box+thin ---
+label = 1
+
+
+
+
+                        ..::
+                      ..==**::
+                        --##==..
+                        ..==**--
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ..==%%==
+                        ::++%%--
+                      ..++%%**::
+                      ..++%%--..
+                      ..==**::
+                          ..

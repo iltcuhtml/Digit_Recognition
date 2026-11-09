@@ -51,3 +51,10 @@ add_executable(
     "src/dataset.h" "src/dataset.c"
     "src/nn.h" "src/nn.c"
 )
+
+add_executable(
+    own_check
+    "src/own_check.c"
+    "src/dataset.h" "src/dataset.c"
+    "src/nn.h" "src/nn.c"
+)
