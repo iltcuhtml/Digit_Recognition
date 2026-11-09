@@ -94,6 +94,125 @@ static void Dataset_copy_sample(Dataset* dst, size_t di, Dataset src, size_t si)
     Dataset_set_label(dst, di, src.digits[si]);
 }
 
+static FILE* open_rb(const char* path)
+{
+    FILE* f = NULL;
+
+#ifdef _MSC_VER
+    if (fopen_s(&f, path, "rb") != 0)
+        f = NULL;
+#else
+    f = fopen(path, "rb");
+#endif
+
+    return f;
+}
+
+static int read_be32(FILE* f, uint32_t* out)
+{
+    uint8_t b[4];
+
+    if (fread(b, 1, 4, f) != 4)
+        return 0;
+
+    *out = ((uint32_t)b[0] << 24) | ((uint32_t)b[1] << 16) | ((uint32_t)b[2] << 8) | (uint32_t)b[3];
+    return 1;
+}
+
+Dataset Dataset_subset(Dataset src, size_t start, size_t count)
+{
+    Dataset d = Dataset_alloc(count);
+
+    if (d.count == 0 || start + count > src.count)
+    {
+        Dataset_free(&d);
+        return d;
+    }
+
+    for (size_t i = 0; i < count; i++)
+        Dataset_copy_sample(&d, i, src, start + i);
+
+    return d;
+}
+
+Dataset Dataset_load_mnist(const char* image_path, const char* label_path, size_t limit)
+{
+    Dataset d = { 0 };
+
+    FILE* fi = open_rb(image_path);
+    FILE* fl = open_rb(label_path);
+
+    uint8_t* raw = NULL;
+    uint8_t* lab = NULL;
+
+    uint32_t magic_i = 0, n_i = 0, rows = 0, cols = 0, magic_l = 0, n_l = 0;
+    size_t n = 0;
+
+    if (!fi || !fl)
+    {
+        printf("Failed to open MNIST files\n");
+        goto done;
+    }
+
+    if (!read_be32(fi, &magic_i) || !read_be32(fi, &n_i) || !read_be32(fi, &rows) || !read_be32(fi, &cols) ||
+        !read_be32(fl, &magic_l) || !read_be32(fl, &n_l))
+    {
+        printf("Failed to read MNIST header\n");
+        goto done;
+    }
+
+    if (magic_i != 2051u || magic_l != 2049u || rows != (uint32_t)DS_IMG_LEN || cols != (uint32_t)DS_IMG_LEN || n_i != n_l)
+    {
+        printf("MNIST header mismatch\n");
+        goto done;
+    }
+
+    n = n_i;
+
+    if (limit > 0 && limit < n)
+        n = limit;
+
+    raw = (uint8_t*)malloc(n * DS_PIXELS);
+    lab = (uint8_t*)malloc(n);
+
+    if (!raw || !lab ||
+        fread(raw, 1, n * DS_PIXELS, fi) != n * DS_PIXELS ||
+        fread(lab, 1, n, fl) != n)
+    {
+        printf("Failed to read MNIST data\n");
+        goto done;
+    }
+
+    d = Dataset_alloc(n);
+
+    if (d.count == 0)
+        goto done;
+
+    for (size_t i = 0; i < n; i++)
+    {
+        if (lab[i] >= DS_CLASSES)
+        {
+            printf("Invalid MNIST label\n");
+            Dataset_free(&d);
+            goto done;
+        }
+
+        for (size_t j = 0; j < DS_PIXELS; j++)
+            MAT_AT(d.inputs, i, j) = raw[i * DS_PIXELS + j] / 255.0f;
+
+        Dataset_set_label(&d, i, (int)lab[i]);
+    }
+
+done:
+    free(raw);
+    free(lab);
+
+    if (fi) fclose(fi);
+    if (fl) fclose(fl);
+
+    return d;
+}
+
 // -------------------------
 // Load
 // -------------------------

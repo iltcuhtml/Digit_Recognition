@@ -37,3 +37,17 @@ add_executable(
     "src/dataset.h" "src/dataset.c"
     "src/nn.h" "src/nn.c"
 )
+
+add_executable(
+    mnist_check
+    "src/mnist_check.c"
+    "src/dataset.h" "src/dataset.c"
+    "src/nn.h" "src/nn.c"
+)
+
+add_executable(
+    train_mnist
+    "src/train_mnist.c"
+    "src/dataset.h" "src/dataset.c"
+    "src/nn.h" "src/nn.c"
+)

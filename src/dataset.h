@@ -19,6 +19,12 @@ typedef struct
     int* digits;    // count, label as integer (0~9)
 } Dataset;
 
+// Copy 'count' samples starting at 'start' into a new dataset (count == 0 on failure).
+Dataset Dataset_subset(Dataset src, size_t start, size_t count);
+
+// MNIST (IDX format). limit = 0 -> load everything, otherwise only the first 'limit' samples.
+Dataset Dataset_load_mnist(const char* image_path, const char* label_path, size_t limit);
+
 // Load 'data/number.dat'. Label of sample i is (i % 10), same rule as before.
 // Returns count == 0 on failure.
 Dataset Dataset_load(const char* path);
