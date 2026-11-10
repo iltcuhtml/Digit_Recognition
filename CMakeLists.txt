@@ -58,3 +58,10 @@ add_executable(
     "src/dataset.h" "src/dataset.c"
     "src/nn.h" "src/nn.c"
 )
+
+add_executable(
+    train_compare
+    "src/train_compare.c"
+    "src/dataset.h" "src/dataset.c"
+    "src/nn.h" "src/nn.c"
+)
