@@ -1,0 +1,65 @@
+일단 아래는 2단계를 실행한 결과야. Release로 돌려서 60분 정도가 걸렸어.
+
+[Compare | MNIST + aug | lr 0.003 | 6 epochs | 3 chunks of 20000 | lambda 0.03 | p 0.6]
+  chunk 0 | baseline   | train  97.8% | val  97.4% (loss 0.0735)
+  chunk 0 | L2 0.0003  | train  97.9% | val  98.1% (loss 0.0673)
+  chunk 0 | L2 0.001   | train  97.6% | val  97.6% (loss 0.0779)
+  chunk 0 | L2 0.003   | train  97.5% | val  97.3% (loss 0.0884)
+  chunk 0 | drop 0.1   | train  97.6% | val  97.6% (loss 0.0746)
+  chunk 0 | drop 0.2   | train  97.9% | val  97.6% (loss 0.0695)
+  chunk 0 | drop 0.3   | train  96.7% | val  97.5% (loss 0.0828)
+  chunk 1 | baseline   | train  97.4% | val  96.3% (loss 0.1114)
+  chunk 1 | L2 0.0003  | train  98.0% | val  97.0% (loss 0.0953)
+  chunk 1 | L2 0.001   | train  97.0% | val  96.1% (loss 0.1118)
+  chunk 1 | L2 0.003   | train  96.6% | val  95.8% (loss 0.1351)
+  chunk 1 | drop 0.1   | train  97.6% | val  96.9% (loss 0.0994)
+  chunk 1 | drop 0.2   | train  97.5% | val  96.4% (loss 0.0989)
+  chunk 1 | drop 0.3   | train  96.9% | val  97.0% (loss 0.1060)
+  chunk 2 | baseline   | train  97.8% | val  97.8% (loss 0.0770)
+  chunk 2 | L2 0.0003  | train  97.4% | val  97.1% (loss 0.0980)
+  chunk 2 | L2 0.001   | train  98.0% | val  97.7% (loss 0.0818)
+  chunk 2 | L2 0.003   | train  97.0% | val  97.6% (loss 0.0979)
+  chunk 2 | drop 0.1   | train  97.4% | val  98.4% (loss 0.0674)
+  chunk 2 | drop 0.2   | train  97.7% | val  97.7% (loss 0.0817)
+  chunk 2 | drop 0.3   | train  97.4% | val  97.9% (loss 0.0813)
+
+=========== Search summary (mean +- std over 3 chunks, validation data) ===========
+config     val loss           val acc(%)     train(%)
+baseline   0.0873 +- 0.0210    97.2 +- 0.8    97.6 +- 0.2
+L2 0.0003  0.0869 +- 0.0170    97.4 +- 0.6    97.8 +- 0.3
+L2 0.001   0.0905 +- 0.0185    97.2 +- 0.9    97.5 +- 0.5
+L2 0.003   0.1071 +- 0.0247    96.9 +- 1.0    97.0 +- 0.4
+drop 0.1   0.0805 +- 0.0168    97.6 +- 0.8    97.5 +- 0.1
+drop 0.2   0.0834 +- 0.0148    97.2 +- 0.7    97.7 +- 0.2
+drop 0.3   0.0900 +- 0.0138    97.5 +- 0.5    97.0 +- 0.3
+
+best regularized config by val loss: drop 0.1 (0.0805), baseline 0.0873
+
+그런데, L2 0.0003가 baseline보다 loss가 더 작은데, 로그에서는 baseline이 더 좋대. 일단 L2 0.0003이랑 drop 0.1로 3단계 학습을 진행했어. 아래는 3단계를 실행한 결과야.
+
+[Compare | MNIST + aug | lr 0.003 | 6 epochs | 3 chunks of 20000 | lambda 0.0003 | p 0.1]
+  chunk 0 | baseline   | train  97.8% | val  97.4% (loss 0.0735) | test 97.32% (loss 0.0791) | own  89.1% (loss 0.4839)
+  chunk 0 | l2         | train  97.9% | val  98.1% (loss 0.0673) | test 97.64% (loss 0.0719) | own  90.9% (loss 0.4348)
+  chunk 0 | dropout    | train  97.6% | val  97.6% (loss 0.0746) | test 97.08% (loss 0.0833) | own  88.2% (loss 0.5497)
+  chunk 0 | both       | train  97.9% | val  98.0% (loss 0.0625) | test 97.49% (loss 0.0758) | own  90.0% (loss 0.5707)
+  chunk 1 | baseline   | train  97.4% | val  96.3% (loss 0.1114) | test 96.72% (loss 0.0954) | own  88.2% (loss 0.6532)
+  chunk 1 | l2         | train  98.0% | val  97.0% (loss 0.0953) | test 97.21% (loss 0.0819) | own  90.9% (loss 0.5787)
+  chunk 1 | dropout    | train  97.6% | val  96.9% (loss 0.0994) | test 97.36% (loss 0.0815) | own  91.8% (loss 0.5540)
+  chunk 1 | both       | train  97.7% | val  96.6% (loss 0.0938) | test 97.50% (loss 0.0772) | own  90.0% (loss 0.5878)
+  chunk 2 | baseline   | train  97.8% | val  97.8% (loss 0.0770) | test 97.56% (loss 0.0746) | own  86.4% (loss 0.5530)
+  chunk 2 | l2         | train  97.4% | val  97.1% (loss 0.0980) | test 96.84% (loss 0.0948) | own  86.4% (loss 0.5736)
+  chunk 2 | dropout    | train  97.4% | val  98.4% (loss 0.0674) | test 97.45% (loss 0.0804) | own  90.0% (loss 0.5676)
+  chunk 2 | both       | train  97.2% | val  97.6% (loss 0.0730) | test 97.19% (loss 0.0850) | own  90.0% (loss 0.4797)
+
+=========== Table 1: mean +- std over 3 chunks ===========
+model     train        test(MNIST)    test loss        gap(tr-te)   own
+baseline   97.6 +- 0.2  97.20 +- 0.43  0.0830 +- 0.0109 +0.43 +- 0.25  87.9 +- 1.4
+l2         97.8 +- 0.3  97.23 +- 0.40  0.0829 +- 0.0114 +0.54 +- 0.27  89.4 +- 2.6
+dropout    97.5 +- 0.1  97.30 +- 0.19  0.0817 +- 0.0014 +0.25 +- 0.29  90.0 +- 1.8
+both       97.6 +- 0.3  97.39 +- 0.18  0.0793 +- 0.0050 +0.19 +- 0.18  90.0 +- 0.0
+
+=========== Table 2: difference to baseline on the SAME chunk (model - baseline) ===========
+model     d test acc (%p)    d test loss          lower    d own acc (%p)
+l2         +0.03 +- 0.66      -0.0002 +- 0.0179    2 / 3      +1.5 +- 1.4
+dropout    +0.10 +- 0.48      -0.0013 +- 0.0109    1 / 3      +2.1 +- 2.6
+both       +0.19 +- 0.58      -0.0037 +- 0.0143    2 / 3      +2.1 +- 1.4

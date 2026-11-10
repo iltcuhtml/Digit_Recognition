@@ -13,16 +13,23 @@
 #define LR              0.003f
 #define AUG_DEG         10.0f
 #define AUG_SHIFT       3.0f
-#define LAMBDA          0.03f       // chosen in the 1st study
-#define DROP_P          0.6f
+#define LAMBDA          0.0003f
+#define DROP_P          0.1f
 #define EVAL_TRAIN_N    2000
+
+#define SEARCH          0           // 1: choose lambda / p with validation data only (test and own data are not evaluated)
+
+#if SEARCH
+#define MODELS          7
+#else
 #define MODELS          4
+#endif
 
 typedef struct { NN nn; NN grad; ConvLayer conv; } Model;
 
 typedef struct
 {
-    float train_acc, val_acc;
+    float train_acc, val_acc, val_loss;
     float test_acc, test_loss;
     float own_acc, own_loss;
 } Result;
@@ -154,11 +161,14 @@ static int run_one(float lambda, float dropout, int s,
     tr_lb.rows = EVAL_TRAIN_N;
 
     CNN_evaluate(m.nn, m.conv, tr_in, tr_lb, NULL, &r->train_acc);
-    CNN_evaluate(m.nn, m.conv, val.inputs, val.labels, NULL, &r->val_acc);
-    CNN_evaluate(m.nn, m.conv, test.inputs, test.labels, &r->test_loss, &r->test_acc);
-    CNN_evaluate(m.nn, m.conv, own.inputs, own.labels, &r->own_loss, &r->own_acc);
+    CNN_evaluate(m.nn, m.conv, val.inputs, val.labels, &r->val_loss, &r->val_acc);
 
-    free(order);
+    if (!SEARCH)
+    {
+        CNN_evaluate(m.nn, m.conv, test.inputs, test.labels, &r->test_loss, &r->test_acc);
+        CNN_evaluate(m.nn, m.conv, own.inputs, own.labels, &r->own_loss, &r->own_acc);
+    }
+
     Model_free(&m);
 
     return 1;
@@ -173,9 +183,15 @@ int main(void)
     if (all.count < (size_t)SEEDS * CHUNK || test.count == 0 || own.count == 0)
         return EXIT_FAILURE;
 
+#if SEARCH
+    const char* names[MODELS] = { "baseline", "L2 0.0003", "L2 0.001", "L2 0.003", "drop 0.1", "drop 0.2", "drop 0.3" };
+    float lam[MODELS] = { 0.0f, 0.0003f, 0.001f, 0.003f, 0.0f, 0.0f, 0.0f };
+    float drp[MODELS] = { 0.0f, 0.0f, 0.0f, 0.0f, 0.1f, 0.2f, 0.3f };
+#else
     const char* names[MODELS] = { "baseline", "l2", "dropout", "both" };
     float lam[MODELS] = { 0.0f, LAMBDA, 0.0f, LAMBDA };
     float drp[MODELS] = { 0.0f, 0.0f, DROP_P, DROP_P };
+#endif
 
     Result res[MODELS][SEEDS];
 
@@ -203,9 +219,14 @@ int main(void)
             if (!run_one(lam[c], drp[c], s, train, train_aug, val, test, own, r))
                 return EXIT_FAILURE;
 
-            printf("  chunk %d | %-8s | train %5.1f%% | val %5.1f%% | test %5.2f%% (loss %.4f) | own %5.1f%% (loss %.4f)\n",
-                s, names[c], (double)r->train_acc * 100, (double)r->val_acc * 100,
-                (double)r->test_acc * 100, (double)r->test_loss, (double)r->own_acc * 100, (double)r->own_loss);
+            printf("  chunk %d | %-10s | train %5.1f%% | val %5.1f%% (loss %.4f)",
+                s, names[c], (double)r->train_acc * 100, (double)r->val_acc * 100, (double)r->val_loss);
+
+            if (!SEARCH)
+                printf(" | test %5.2f%% (loss %.4f) | own %5.1f%% (loss %.4f)",
+                    (double)r->test_acc * 100, (double)r->test_loss, (double)r->own_acc * 100, (double)r->own_loss);
+
+            printf("\n");
 
             fflush(stdout);
         }
@@ -223,6 +244,50 @@ int main(void)
 #else
     csv = fopen("data/compare_mnist.csv", "w");
 #endif
+
+    if (SEARCH)
+    {
+        printf("\n=========== Search summary (mean +- std over %d chunks, validation data) ===========\n", SEEDS);
+        printf("%-10s %-18s %-14s %-12s\n", "config", "val loss", "val acc(%)", "train(%)");
+
+        float best_loss = 1e9f;
+        int best = 0;
+
+        for (int c = 0; c < MODELS; c++)
+        {
+            float vl[SEEDS] = { 0.0f }, va[SEEDS] = { 0.0f }, ta[SEEDS] = { 0.0f };
+            float m1, s1, m2, s2, m3, s3;
+
+            for (int s = 0; s < SEEDS; s++)
+            {
+                vl[s] = res[c][s].val_loss;
+                va[s] = res[c][s].val_acc * 100.0f;
+                ta[s] = res[c][s].train_acc * 100.0f;
+            }
+
+            mean_std(vl, SEEDS, &m1, &s1);
+            mean_std(va, SEEDS, &m2, &s2);
+            mean_std(ta, SEEDS, &m3, &s3);
+
+            printf("%-10s %6.4f +- %-8.4f %5.1f +- %-5.1f %5.1f +- %-4.1f\n",
+                names[c], (double)m1, (double)s1, (double)m2, (double)s2, (double)m3, (double)s3);
+
+            if (c > 0 && m1 < best_loss)
+            {
+                best_loss = m1;
+                best = c;
+            }
+        }
+
+        printf("\nbest regularized config by val loss: %s (%.4f), baseline %.4f\n", names[best], (double)best_loss,
+            (double)(res[0][0].val_loss + res[0][1].val_loss + res[0][2].val_loss) / 3.0);
+
+        Dataset_free(&all);
+        Dataset_free(&test);
+        Dataset_free(&own);
+
+        return EXIT_SUCCESS;
+    }
 
     if (csv)
     {
@@ -243,7 +308,7 @@ int main(void)
 
     for (int c = 0; c < MODELS; c++)
     {
-        float a[SEEDS], b[SEEDS], d[SEEDS], g[SEEDS], o[SEEDS];
+        float a[SEEDS] = { 0.0f }, b[SEEDS] = { 0.0f }, d[SEEDS] = { 0.0f }, g[SEEDS] = { 0.0f }, o[SEEDS] = { 0.0f };
         float m1, s1, m2, s2, m3, s3, m4, s4, m5, s5;
 
         for (int s = 0; s < SEEDS; s++)
@@ -271,7 +336,7 @@ int main(void)
 
     for (int c = 1; c < MODELS; c++)
     {
-        float dt[SEEDS], dl[SEEDS], dw[SEEDS];
+        float dt[SEEDS] = { 0.0f }, dl[SEEDS] = { 0.0f }, dw[SEEDS] = { 0.0f };
         int lower = 0;
         float m1, s1, m2, s2, m3, s3;
 
