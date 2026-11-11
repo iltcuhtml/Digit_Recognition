@@ -115,7 +115,7 @@ static void mean_std(const float* v, int n, float* mean, float* sd)
     *sd = n > 1 ? sqrtf(q / (float)(n - 1)) : 0.0f;
 }
 
-static int run_one(float lambda, float dropout, int s,
+static int run_one(float lambda, float dropout, int s, int epochs,
     Dataset train, Dataset train_aug, Dataset val, Dataset test, Dataset own, Result* r)
 {
     Model m;
@@ -142,7 +142,7 @@ static int run_one(float lambda, float dropout, int s,
 
     shuffle_state = 12345u + (uint32_t)s;
 
-    for (int e = 1; e <= EPOCHS; e++)
+    for (int e = 1; e <= epochs; e++)
     {
         shuffle_order(order, train.count);
 
@@ -157,8 +157,10 @@ static int run_one(float lambda, float dropout, int s,
 
     Mat tr_in = train.inputs, tr_lb = train.labels;
 
-    tr_in.rows = EVAL_TRAIN_N;
-    tr_lb.rows = EVAL_TRAIN_N;
+    size_t n_eval = train.count < EVAL_TRAIN_N ? train.count : EVAL_TRAIN_N;
+
+    tr_in.rows = n_eval;
+    tr_lb.rows = n_eval;
 
     CNN_evaluate(m.nn, m.conv, tr_in, tr_lb, NULL, &r->train_acc);
     CNN_evaluate(m.nn, m.conv, val.inputs, val.labels, &r->val_loss, &r->val_acc);
@@ -174,6 +176,108 @@ static int run_one(float lambda, float dropout, int s,
     return 1;
 }
 
+// ---------- Data-size experiment ----------
+#define SIZE_EXP        1           // 1: run the data-size experiment (SEARCH is ignored)
+#define SIZE_EPOCHS     30
+#define SIZE_COUNT      2
+#define SIZE_MODELS     5
+#define W_LAMBDA        0.0003f     // weak  (chosen on 18000 images)
+#define W_DROP          0.1f
+#define S_LAMBDA        0.03f       // strong (chosen in the 1st study, 770 images/epoch)
+#define S_DROP          0.6f
+
+static const size_t SIZES[SIZE_COUNT] = { 300, 1000 };
+
+static int run_size_experiment(Dataset all, Dataset test, Dataset own)
+{
+    const char* names[SIZE_MODELS] = { "baseline", "L2 weak", "L2 strong", "drop weak", "drop strong" };
+    float lam[SIZE_MODELS] = { 0.0f, W_LAMBDA, S_LAMBDA, 0.0f, 0.0f };
+    float drp[SIZE_MODELS] = { 0.0f, 0.0f, 0.0f, W_DROP, S_DROP };
+
+    printf("[Size experiment | MNIST + aug | lr %g | %d epochs | %d seeds]\n", (double)LR, SIZE_EPOCHS, SEEDS);
+
+    for (int z = 0; z < SIZE_COUNT; z++)
+    {
+        size_t n = SIZES[z];
+
+        Result res[SIZE_MODELS][SEEDS];
+
+        memset(res, 0, sizeof(res));
+
+        for (int s = 0; s < SEEDS; s++)
+        {
+            size_t base = (size_t)s * CHUNK;
+
+            Dataset train = Dataset_subset(all, base, n);
+            Dataset val = Dataset_subset(all, base + CHUNK - 2000, 2000);
+            Dataset train_aug = Dataset_subset(train, 0, train.count);
+
+            if (train.count == 0 || val.count == 0 || train_aug.count == 0)
+                return 0;
+
+            for (int c = 0; c < SIZE_MODELS; c++)
+            {
+                Result* r = &res[c][s];
+
+                if (!run_one(lam[c], drp[c], s, SIZE_EPOCHS, train, train_aug, val, test, own, r))
+                    return 0;
+
+                printf("  N %zu | seed %d | %-11s | train %5.1f%% | test %5.2f%% (loss %.4f) | own %5.1f%%\n",
+                    n, s, names[c], (double)r->train_acc * 100, (double)r->test_acc * 100,
+                    (double)r->test_loss, (double)r->own_acc * 100);
+
+                fflush(stdout);
+            }
+
+            Dataset_free(&train);
+            Dataset_free(&val);
+            Dataset_free(&train_aug);
+        }
+
+        printf("\n=== N = %zu training images, %d epochs, mean +- std over %d seeds ===\n", n, SIZE_EPOCHS, SEEDS);
+        printf("%-12s %-12s %-14s %-12s %-18s %-8s %-12s\n", "model", "train", "test(MNIST)", "gap", "test loss", "lower", "own");
+
+        for (int c = 0; c < SIZE_MODELS; c++)
+        {
+            float a[SEEDS] = { 0.0f }, b[SEEDS] = { 0.0f }, g[SEEDS] = { 0.0f }, l[SEEDS] = { 0.0f }, o[SEEDS] = { 0.0f };
+            float m1, s1, m2, s2, m3, s3, m4, s4, m5, s5;
+            int lower = 0;
+            char low[16];
+
+            for (int s = 0; s < SEEDS; s++)
+            {
+                a[s] = res[c][s].train_acc * 100.0f;
+                b[s] = res[c][s].test_acc * 100.0f;
+                g[s] = a[s] - b[s];
+                l[s] = res[c][s].test_loss;
+                o[s] = res[c][s].own_acc * 100.0f;
+
+                if (res[c][s].test_loss < res[0][s].test_loss)
+                    lower++;
+            }
+
+            mean_std(a, SEEDS, &m1, &s1);
+            mean_std(b, SEEDS, &m2, &s2);
+            mean_std(g, SEEDS, &m3, &s3);
+            mean_std(l, SEEDS, &m4, &s4);
+            mean_std(o, SEEDS, &m5, &s5);
+
+            if (c == 0)
+                snprintf(low, sizeof(low), "-");
+            else
+                snprintf(low, sizeof(low), "%d / %d", lower, SEEDS);
+
+            printf("%-12s %5.1f +- %-4.1f %5.1f +- %-5.1f %5.1f +- %-4.1f %6.3f +- %-6.3f %-8s %5.1f +- %-4.1f\n",
+                names[c], (double)m1, (double)s1, (double)m2, (double)s2, (double)m3, (double)s3,
+                (double)m4, (double)s4, low, (double)m5, (double)s5);
+        }
+
+        printf("\n");
+    }
+
+    return 1;
+}
+
 int main(void)
 {
     Dataset all = Dataset_load_mnist("data/mnist/train-images-idx3-ubyte", "data/mnist/train-labels-idx1-ubyte", 0);
@@ -182,6 +286,17 @@ int main(void)
 
     if (all.count < (size_t)SEEDS * CHUNK || test.count == 0 || own.count == 0)
         return EXIT_FAILURE;
+
+    if (SIZE_EXP)
+    {
+        int ok = run_size_experiment(all, test, own);
+
+        Dataset_free(&all);
+        Dataset_free(&test);
+        Dataset_free(&own);
+
+        return ok ? EXIT_SUCCESS : EXIT_FAILURE;
+    }
 
 #if SEARCH
     const char* names[MODELS] = { "baseline", "L2 0.0003", "L2 0.001", "L2 0.003", "drop 0.1", "drop 0.2", "drop 0.3" };
@@ -216,7 +331,7 @@ int main(void)
         {
             Result* r = &res[c][s];
 
-            if (!run_one(lam[c], drp[c], s, train, train_aug, val, test, own, r))
+            if (!run_one(lam[c], drp[c], s, EPOCHS, train, train_aug, val, test, own, r))
                 return EXIT_FAILURE;
 
             printf("  chunk %d | %-10s | train %5.1f%% | val %5.1f%% (loss %.4f)",
