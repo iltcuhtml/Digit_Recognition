@@ -11,8 +11,8 @@
 #define CHUNK           20000       // SEEDS * CHUNK must be <= 60000
 #define EPOCHS          6
 #define LR              0.003f
-#define AUG_DEG         10.0f
-#define AUG_SHIFT       3.0f
+#define AUG_DEG         0.0f
+#define AUG_SHIFT       0.0f
 #define LAMBDA          0.0003f
 #define DROP_P          0.1f
 #define EVAL_TRAIN_N    2000
@@ -194,7 +194,8 @@ static int run_size_experiment(Dataset all, Dataset test, Dataset own)
     float lam[SIZE_MODELS] = { 0.0f, W_LAMBDA, S_LAMBDA, 0.0f, 0.0f };
     float drp[SIZE_MODELS] = { 0.0f, 0.0f, 0.0f, W_DROP, S_DROP };
 
-    printf("[Size experiment | MNIST + aug | lr %g | %d epochs | %d seeds]\n", (double)LR, SIZE_EPOCHS, SEEDS);
+    printf("[Size experiment | MNIST + aug %g deg %g px | lr %g | %d epochs | %d seeds]\n",
+        (double)AUG_DEG, (double)AUG_SHIFT, (double)LR, SIZE_EPOCHS, SEEDS);
 
     for (int z = 0; z < SIZE_COUNT; z++)
     {
